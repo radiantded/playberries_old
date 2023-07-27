@@ -29,8 +29,11 @@ class Database:
             INSERT INTO 
             tasks (prompt, product_id, operations)
             VALUES (?, ?, ?)
+            RETURNING task_id
         """, data)
+        id_ = await self.cursor.fetchone()
         await self.db.commit()
+        return id_
     
     
     async def get_all(self):
@@ -40,11 +43,11 @@ class Database:
         all = await result.fetchall()
         return all
         
-    async def get_one(self, id: int):
+    async def get_one(self, id_: int):
         result = await self.cursor.execute(f"""
             SELECT * FROM tasks
             WHERE task_id = ?
-        """, (id, ))
+        """, (id_, ))
         one = await result.fetchone()
         return one
         
@@ -52,5 +55,5 @@ class Database:
         await self.cursor.execute(f"""
             DELETE FROM tasks
             WHERE task_id = ?
-        """, tuple(id_))
+        """, (id_, ))
         await self.db.commit()

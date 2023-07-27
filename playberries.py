@@ -1,17 +1,19 @@
 import asyncio
-import time
 from datetime import datetime as dt
 from random import choice
 from typing import Union
 
+import aiohttp
 from playwright._impl._browser import Browser
-from playwright._impl._locator import Locator
+from playwright._impl._page import Page
 from playwright.async_api import async_playwright
 from playwright.async_api._generated import Playwright as AsyncPlaywright
 
-from config import OPTIONS_RETRIES, PAGE_RETRIES, PROXY_SITE, USER_AGENTS
-from xpath_conf import (CARTS, COLORS, NEXT_PAGE, OPTIONS, PAGE_HEIGHT,
-                        SEARCH_BLOCK, SEARCH_RESULTS)
+from config import (ADD_TO_CART_RATE, GLOBAL_RETRIES, HEADLESS, PAGE_RETRIES,
+                    PROXY_LOGIN, PROXY_PASS, PROXY_SITE, USER_AGENTS,
+                    WAIT_AFTER_CART, WAIT_AFTER_FINISH)
+from xpath_conf import (CARTS, ITEM_MAIN_PAGE, NEXT_PAGE, OPTIONS, PAGE_HEIGHT,
+                        RECOMMENDATIONS, SEARCH_BLOCK, SEARCH_RESULTS)
 
 
 async def init_browser(pw: AsyncPlaywright, proxy: tuple=None) -> Browser:
@@ -28,35 +30,32 @@ async def init_browser(pw: AsyncPlaywright, proxy: tuple=None) -> Browser:
             f'Подключение через прокси: {proxy}'
         )
         browser = await pw.chromium.launch(
-            proxy={"server": f'http://{proxy}'},
-            args=args
+            proxy={"server": f'http://{proxy[0]}:{proxy[1]}',
+                   "username": PROXY_LOGIN, "password": PROXY_PASS},
+            args=args,
+            headless=HEADLESS
         )
     else:
-        browser = await pw.chromium.launch(args=args, headless=True)
+        browser = await pw.chromium.launch(args=args, headless=HEADLESS)
     return browser
         
 
-async def get_proxies(browser: Browser) -> tuple:
-    page = await browser.new_page(viewport={'width': 1920, 'height': 1080})
-    await page.goto(PROXY_SITE)
-    text = await page.inner_text('body')
-    proxies = tuple(text.split('\n'))
-    print(
-        f'{dt.now().strftime("%H:%M:%S")} |',
-        f'Доступных прокси: {len(proxies)}'
-    )
-    await browser.close()
+async def get_proxies():
+    async with aiohttp.ClientSession() as session:
+        async with session.get(PROXY_SITE) as response:
+            json = await response.json()    
+            proxies = [(json['list'][i]['ip'], json['list'][i]['port']) for i in json['list']]
     return proxies
 
 
 async def perform_search(
-    page: Locator, prompt: str, color: str, task_id: int) -> bool:
+    page: Page, prompt: str, color: str, task_id: int) -> bool:
     try:
         search_box = page.locator(f"xpath={SEARCH_BLOCK}")
         await asyncio.sleep(2)
         await search_box.click()
         await asyncio.sleep(2)
-        await search_box.type(prompt, delay=200)
+        await search_box.type(prompt, delay=200, timeout=20000)
         await asyncio.sleep(2)
         await search_box.press('Enter')
         await page.locator(f"xpath={SEARCH_RESULTS}").is_enabled()
@@ -75,32 +74,32 @@ async def perform_search(
         return False
 
 
-async def smooth_scroll(page: Locator, location_y: int) -> None:
-    for i in range(1, location_y, 10):
+async def smooth_scroll(page: Page, location_y: int) -> None:
+    for i in range(1, location_y, 5):
         await page.evaluate(f'window.scrollTo(0, {i});')
     await asyncio.sleep(2)
             
             
-async def find_item(page: Locator, item_id: int) -> None:
+async def find_item(page: Page, item_id: int) -> None:
     item = page.locator(f'#c{item_id}')
-    await item.is_enabled(timeout=20000)
-    await item.hover(timeout=20000)
+    await item.hover(timeout=1000)
     await asyncio.sleep(2)
     await item.click()
     await asyncio.sleep(2)
     
     
 async def add_to_cart(
-    color: str, page: Locator, task_id: int, cart_path: str) -> bool:
+    color: str, page: Page, task_id: int) -> bool:
+    await asyncio.sleep(3)
     try:
+        cart = page.locator(f"xpath={CARTS['1']}")
+        await cart.click()
+        await asyncio.sleep(WAIT_AFTER_CART)
         print(
             color + f'{dt.now().strftime("%H:%M:%S")} |',
             f'Задача {task_id} |',
             'Корзина: ОК'
-        )
-        cart = page.locator(f"xpath={cart_path}")
-        await cart.click()
-        await asyncio.sleep(2)
+        )        
         return True
     except Exception as ex:
         print(
@@ -113,7 +112,7 @@ async def add_to_cart(
 
 
 async def go_to_next_page(
-    color: str, page: Locator, task_id: int, item_id: int) -> bool:
+    color: str, page: Page, task_id: int, item_id: int) -> bool:
     try:
         print(
             color + f'{dt.now().strftime("%H:%M:%S")} |',
@@ -124,7 +123,6 @@ async def go_to_next_page(
         await next_page.hover()
         await asyncio.sleep(2)
         await next_page.click()
-        await asyncio.sleep(5)
         return True
     except Exception as ex:
         print(
@@ -135,27 +133,56 @@ async def go_to_next_page(
         return False
     
 
-async def refresh_proxies(
-    color: str, task_id: int, pw: AsyncPlaywright) -> tuple[str]:
+async def return_to_first_page(
+    color: str, page: Page, task_id: int):
+    print(
+        color + f'{dt.now().strftime("%H:%M:%S")} |',
+        f'Задача {task_id} |',
+        f'Возврат на первую страницу'
+    )
     try:
+        first_page = page.locator('a.pagination-item.pagination__item.j-page', has_text='1')
+        await first_page.hover()
+        await asyncio.sleep(2)
+        await first_page.click()
+    except:
+        pass
+    return True
+
+
+async def click_random_item(
+    color: str, page: Page, task_id: int):
+    try:
+        await asyncio.sleep(5)
+        attempts = 7
+        while attempts:
+            item = page.locator(ITEM_MAIN_PAGE.format(choice(range(1, 6))))
+            attr = await item.get_attribute('class')
+            if 'product-card--adv' in attr:
+                attempts -= 1
+                continue
+            await item.hover()
+            await asyncio.sleep(5)
+            await item.click()
+            break
+            
         print(
             color + f'{dt.now().strftime("%H:%M:%S")} |',
             f'Задача {task_id} |',
-            'Обновляем прокси'
+            f'Выбран товар {await item.get_attribute("data-nm-id")}'
         )
-        browser = await init_browser(pw, proxy=None)
-        proxies = await get_proxies(browser)
-        return proxies
+        await asyncio.sleep(10)
     except Exception as ex:
-        print(color + ex.__str__()) 
-        return None
+        print(ex)
+    return True
 
 
 async def open_site(
-    color: str, browser: Browser, task_id: int) -> Union[Locator, None]:
+    color: str, browser: Browser, task_id: int) -> Union[Page, None]:
     try:
         page = await browser.new_page(viewport={'width': 1920, 'height': 1080})
         await page.goto("https://www.wildberries.ru")
+        page.set_default_timeout(3000)
         print(
             color + f'{dt.now().strftime("%H:%M:%S")} |',
             f'Задача {task_id} |',
@@ -169,26 +196,37 @@ async def open_site(
             'Сайт: Ошибка'
         )
         return None
-    
 
-async def check_colors(
-    color: str, page: Locator, task_id: int, operations: int) -> bool:
+
+async def click_recommendations(
+    color: str, page: Page, task_id: int):
+    await asyncio.sleep(5)
     try:
-        await page.locator(f"xpath={COLORS}").is_visible(timeout=60000)
+        await smooth_scroll(page, PAGE_HEIGHT)
+        item = page.locator(RECOMMENDATIONS)
+        await item.hover()
+        await asyncio.sleep(2)
+        await item.click()
+        await page.wait_for_load_state()
         await asyncio.sleep(10)
-        return True
+        print(
+            color + f'{dt.now().strftime("%H:%M:%S")} |',
+            f'Задача {task_id} |',
+            f'Выбраны рекомендации'
+        )
     except Exception as ex:
-        print(
-            color + f'{dt.now().strftime("%H:%M:%S")} |',
-            f'Задача {task_id} |',
-            f'Страница товара: Ошибка - {type(ex).__name__}'
-        )
-        print(
-            color + f'{dt.now().strftime("%H:%M:%S")} |',
-            f'Задача {task_id} |',
-            f'Перезапуск цикла, осталось циклов: {operations}'
-        )
-        return False
+        print(ex)
+
+
+async def select_options(
+    color: str, page: Page, task_id: int):
+        await asyncio.sleep(5)
+        try:
+            option = page.locator(OPTIONS).first
+            await option.click()
+            await asyncio.sleep(2)
+        except Exception:
+            pass
 
 
 async def wildberries(task: tuple, color: str) -> bool:
@@ -197,17 +235,12 @@ async def wildberries(task: tuple, color: str) -> bool:
         f'Запуск задачи: {task}'
     )
     task_id, prompt, item_id, operations = task
-    global_retries = 150
+    global_retries = GLOBAL_RETRIES
     
     async with async_playwright() as pw:
-        proxies = await refresh_proxies(color, task_id, pw)
-        timestamp = time.perf_counter()
-        
+        proxies = await get_proxies()
+        percent_counter = ADD_TO_CART_RATE
         while operations and global_retries:
-            current_time = time.perf_counter()
-            if current_time - timestamp >= 300:
-                proxies = await refresh_proxies(color, task_id, pw)
-                timestamp = current_time
             if not proxies:
                 print(
                     color + f'{dt.now().strftime("%H:%M:%S")} |',
@@ -220,13 +253,11 @@ async def wildberries(task: tuple, color: str) -> bool:
             if not page:
                 await browser.close()
                 continue
-            await asyncio.sleep(2)
             
             search_ok = await perform_search(page, prompt, color, task_id)
             if not search_ok:
                 await browser.close()
                 continue
-            await asyncio.sleep(5)
             
             item_page_ok = False
             for p in range(1, PAGE_RETRIES):
@@ -238,9 +269,7 @@ async def wildberries(task: tuple, color: str) -> bool:
                     )
                     await page.locator(
                         f"xpath={SEARCH_RESULTS}").is_enabled(timeout=60000)
-                    await asyncio.sleep(2)
                     await smooth_scroll(page, PAGE_HEIGHT)
-                    await asyncio.sleep(2)
                     await find_item(page, item_id)
                     item_page_ok = True
                     print(
@@ -250,6 +279,7 @@ async def wildberries(task: tuple, color: str) -> bool:
                     )
                     break
                 except Exception as ex:
+                    print(ex)
                     next_page = await go_to_next_page(
                         color, page,
                         task_id, item_id
@@ -267,36 +297,21 @@ async def wildberries(task: tuple, color: str) -> bool:
                 await browser.close()
                 continue
             
-            colors_ok = await check_colors(
-                color, page,
-                task_id, operations
-            )
-            if not colors_ok:
-                await browser.close()
-                continue
             
-            cart_ok = False
-            for o in range(1, OPTIONS_RETRIES):
-                if not cart_ok:
-                    try:
-                        option = page.locator(f"xpath={OPTIONS.format(o)}")
-                        await option.click()
-                        await asyncio.sleep(2)
-                        print(
-                            color + f'{dt.now().strftime("%H:%M:%S")} |',
-                            f'Задача {task_id} |',
-                            f'Опция {o}'
-                        )
-                    except Exception as ex:
-                        print(
-                            color + f'{dt.now().strftime("%H:%M:%S")} |',
-                            f'Задача {task_id} |',
-                            f'Нет опций'
-                        )
-                    cart_ok = await add_to_cart(
-                        color, page,
-                        task_id, CARTS['1']
-                    )
+            if not percent_counter:
+                await select_options(color, page, task_id)
+                cart_ok = await add_to_cart(color, page, task_id)
+                percent_counter = ADD_TO_CART_RATE
+                await page.go_back()
+                await return_to_first_page(color, page, task_id)
+                await smooth_scroll(page, 3000)
+                await click_random_item(color, page, task_id)
+                await select_options(color, page, task_id)
+                await add_to_cart(color, page, task_id)
+            else:
+                await click_recommendations(color, page, task_id)
+                cart_ok = True
+                percent_counter -= 1
             if not cart_ok:
                 print(
                     color + f'{dt.now().strftime("%H:%M:%S")} |',
@@ -314,8 +329,7 @@ async def wildberries(task: tuple, color: str) -> bool:
                 )
                 await browser.close()
                 operations -= 1
-            await asyncio.sleep(3)
-            print(color + '-' * 50)
+            await asyncio.sleep(WAIT_AFTER_FINISH)
         if not global_retries:
             print(
                 color + f'{dt.now().strftime("%H:%M:%S")} |',

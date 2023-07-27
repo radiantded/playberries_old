@@ -3,15 +3,22 @@ import os
 
 from colorama import Fore
 from dotenv import load_dotenv
+from sys import platform
 
 
 load_dotenv()
 
 PROXY_SITE = os.environ.get('PROXY_SITE')
-BOT_TOKEN = os.environ.get('TEST_TOKEN')
+PROXY_LOGIN = os.environ.get('PROXY_LOGIN')
+PROXY_PASS = os.environ.get('PROXY_PASS')
+
 AUTH_USERS = json.loads(os.environ.get('AUTH_USERS'))
 PAGE_RETRIES = 21
 OPTIONS_RETRIES = 11
+GLOBAL_RETRIES = 150
+ADD_TO_CART_RATE = 0
+WAIT_AFTER_FINISH = 15
+WAIT_AFTER_CART = 3
 
 USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.116 Safari/537.36 OPR/70.0.3728.95',
@@ -28,3 +35,12 @@ CONSOLE_COLORS = [
     Fore.RED, Fore.GREEN, Fore.BLUE, 
     Fore.YELLOW, Fore.WHITE, Fore.MAGENTA, Fore.CYAN
 ]
+
+if platform == 'linux' or platform == "linux2":
+    BOT_TOKEN = os.environ.get('TOKEN')
+    HEADLESS = True
+    LINUX = True
+else:
+    BOT_TOKEN = os.environ.get('TEST_TOKEN')
+    HEADLESS = False
+    LINUX = False

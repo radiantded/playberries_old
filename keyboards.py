@@ -1,9 +1,9 @@
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
 
-all_tasks = KeyboardButton('💡 Все задачи')
-launch_task = KeyboardButton('⚙️ Запустить задачу')
-new_task = KeyboardButton('➕ Создать задачу')
+all_tasks = KeyboardButton('🔶 Все задачи')
+launch_task = KeyboardButton('🚀 Запустить задачу')
+new_task = KeyboardButton('⚙️ Создать задачу')
 delete_task = KeyboardButton('❌ Удалить задачу')
 
 launch = KeyboardButton('✅ Запустить')
