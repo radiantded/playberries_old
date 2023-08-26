@@ -22,15 +22,15 @@ dp = Dispatcher(bot, storage=storage)
 @dp.message_handler(state=StartTaskFSM.start)
 async def register_tasks(message: Message, state: FSMContext):
     await message.delete()
-    async with state.proxy() as data: 
+    async with state.proxy() as data:
         await data['reply'].delete()
-    
+
     if not await check_user(message):
         return
-    
+
     if await check_cancel(message, state):
         return
-    
+
     task_id = message.text
     async with Database() as base:
         task = await base.get_one(task_id)
@@ -40,34 +40,34 @@ async def register_tasks(message: Message, state: FSMContext):
             reply_markup=start_kb)
         await state.finish()
         return
-    
+
     async with state.proxy() as data:
         data['que'] = task
         confirm = await message.answer(
             f'✅ Задача готова к запуску:\n'
             f'🔸 {task[0]} | {task[1]}, '
-            f'{task[2]}, {task[3]}',
+            f'{task[2]}, {task[3]}, {task[4]}',
             reply_markup=launch_que_kb
         )
         reply = await message.answer('⚙️ Подтвердите запуск задачи')
         data['reply'] = reply
         data['confirm'] = confirm
-    
+
     await StartTaskFSM.next()
-    
+
 
 @dp.message_handler(state=DeleteTaskFSM.delete)
-async def register_tasks(message: Message, state: FSMContext):
+async def delete_tasks(message: Message, state: FSMContext):
     await message.delete()
     async with state.proxy() as data:
         await data['reply'].delete()
-    
+
     if not await check_user(message):
         return
-    
+
     if await check_cancel(message, state):
         return
-    
+
     task_id = message.text
     async with Database() as base:
         await base.delete(task_id)
@@ -83,20 +83,20 @@ async def que_handler(message: Message, state: FSMContext):
     await message.delete()
     if not await check_user(message):
         return
-    
+
     async with state.proxy() as data:
         await data['reply'].delete()
         await data['confirm'].delete()
         task = data['que']
-    
+
     if await check_cancel(message, state):
         return
-    
+
     if message.text == '✅ Запустить':
         await message.answer(
             f'🚀 Запущена задача:\n'
             f'🔸 {task[0]} | {task[1]}, '
-            f'{task[2]}, {task[3]}', 
+            f'{task[2]}, {task[3]}, {task[4]}',
             reply_markup=start_kb)
         await state.finish()
         result = await wildberries(task, choice(CONSOLE_COLORS))
@@ -104,40 +104,43 @@ async def que_handler(message: Message, state: FSMContext):
             await message.answer(
                 f'❌ Задача завершилась с ошибкой:\n'
                 f'🔸 {task[0]} | {task[1]}, '
-                f'{task[2]}, {task[3]}',
+                f'{task[2]}, {task[3]}, {task[4]}',
                 reply_markup=start_kb
             )
-        else:    
+        else:
             await message.answer(
                 f'✅ Задача завершена:\n'
                 f'🔸 {task[0]} | {task[1]}, '
-                f'{task[2]}, {task[3]}',
+                f'{task[2]}, {task[3]}, {task[4]}',
                 reply_markup=start_kb
             )
-            
-    
+
+
 @dp.message_handler(state=CreateTaskFSM.create)
 async def create_task(message: Message, state: FSMContext):
     await message.delete()
     async with state.proxy() as data:
-        await data['reply'].delete()
-    
+        try:
+            await data['reply'].delete()
+        except:
+            pass
+
     if not await check_user(message):
         return
-    
+
     if await check_cancel(message, state):
         return
-    
+
     task = await check_task(message, state)
     if not task:
         return
-    
+
     async with Database() as base:
         task_id = await base.add(tuple(task))
     await message.answer(
         f'✅ Добавлена задача:\n'
         f'🔸 {task_id[0]} | {task[0]}, '
-        f'{task[1]}, {task[2]}',
+        f'{task[1]}, {task[2]}, {task[3]}',
         reply_markup=start_kb
     )
     await state.finish()
@@ -148,26 +151,26 @@ async def get_all_tasks(message: Message):
     await message.delete()
     if not await check_user(message):
         return
-    
+
     async with Database() as base:
         db_data = await base.get_all()
     reply = await make_reply(db_data)
     await message.answer(
-        reply, 
+        reply,
         reply_markup=start_kb
     )
-    
+
 
 @dp.message_handler(text='⚙️ Создать задачу')
 async def get_task_params(message: Message, state: FSMContext):
     await message.delete()
     if not await check_user(message):
         return
-    
+
     async with state.proxy() as data:
         data['reply'] = await message.answer(
-            ('⚙️ Введите параметры задачи: <поисковый запрос>, '
-            '<артикул>, <количество повторов>')
+            ('⚙️ Введите параметры задачи: <запрос>, '
+             '<артикул>, <повторы>, <корзина>')
         )
     await CreateTaskFSM.create.set()
 
@@ -177,7 +180,7 @@ async def delete_task(message: Message, state: FSMContext):
     await message.delete()
     if not await check_user(message):
         return
-    
+
     async with state.proxy() as data:
         data['reply'] = await message.answer(
             '⚙️ Введите id задачи для удаления',
@@ -186,14 +189,13 @@ async def delete_task(message: Message, state: FSMContext):
     await DeleteTaskFSM.delete.set()
 
 
-
 @dp.message_handler(text='🚀 Запустить задачу')
 async def create_que(message: Message, state: FSMContext):
     await message.delete()
     if not await check_user(message):
         return
-    
-    async with state.proxy() as data: 
+
+    async with state.proxy() as data:
         data['reply'] = await message.answer(
             '⚙️ Введите id задачи для запуска',
             reply_markup=cancel_kb
@@ -207,7 +209,7 @@ async def start(message: Message):
     await message.delete()
     if not await check_user(message):
         return
-    
+
     await message.answer(
         '☀️ Добро пожаловать!',
         reply_markup=start_kb

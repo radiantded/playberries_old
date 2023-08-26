@@ -10,10 +10,3 @@ RECOMMENDATIONS = 'body > div.wrapper > header > div > div.header__bottom > div.
 FOOTER = '//*[@id="footer"]/div'
 ITEM_MAIN_PAGE = 'xpath=/html/body/div[1]/main/div[2]/div/div[2]/div/div/div[4]/div[1]/div[1]/div/article[{}]'
 
-
-CARTS = {
-    '1': '/html/body/div[1]/main/div[2]/div/div[3]/div/div[3]/div[9]/div/div[1]/div[2]/div/button[2]',
-    '2': '/html/body/div[1]/main/div[2]/div/div[3]/div/div[3]/div[8]/div[1]/div/button[2]',
-    '3': '//*[@id="14e08330-4bd6-9001-10a2-71b561ad549f"]/div[3]/div[8]/div[1]/div/button[2]',
-    '4': '//*[@id="14e08330-4bd6-9001-10a2-71b561ad549f"]/div[3]/div[9]/div/div[1]/div[2]/div/button[2]'
-}
